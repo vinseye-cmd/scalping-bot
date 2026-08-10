@@ -71,7 +71,7 @@ def load_state() -> dict:
             return json.loads(STATE_FILE.read_text())
         except Exception:
             pass
-    return {"position": None, "consecutive_losses": 0, "locked_session_idx": -1, "last_signal": None}
+    return {"position": None, "consecutive_losses": 0, "locked_session_idx": -1, "last_signal": None, "last_heartbeat_date": None}
 
 
 def save_state(s: dict):
@@ -95,6 +95,24 @@ def run():
     active = sess_idx >= 0
 
     print(f"[{now_str}] Cycle | Fenetre: {'active' if active else 'inactive'} | Position: {'oui' if state['position'] else 'non'}")
+
+    # Heartbeat quotidien à 09h00 Paris
+    now_paris = datetime.now(PARIS_TZ)
+    today_str = now_paris.strftime("%Y-%m-%d")
+    if now_paris.hour == 9 and now_paris.minute < 5 and state.get("last_heartbeat_date") != today_str:
+        try:
+            balance = ex.get_futures_balance()
+            balance_str = f"{balance:.2f} USDT"
+        except Exception:
+            balance_str = "indisponible"
+        tg(config["tg_token"], config["chat_id"],
+           f"*Bot de scalping ACTIF*\n"
+           f"Surveillance BTC en cours...\n"
+           f"Fenetres : `09:00-13:00` | `14:00-17:00` (Paris)\n"
+           f"Solde futures : `{balance_str}`\n"
+           f"Pertes consecutives : `{state['consecutive_losses']}/{config['max_losses']}`")
+        state["last_heartbeat_date"] = today_str
+        save_state(state)
 
     try:
         # ── 1. SURVEILLANCE DE LA POSITION OUVERTE ──────────────────
