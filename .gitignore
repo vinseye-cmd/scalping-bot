@@ -1,0 +1,14 @@
+# Clés API et tokens — NE JAMAIS pousser ce fichier
+.env
+
+# Fichiers Python compilés
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs locaux
+*.log
+auto_bot.log
+
+# Fichier d'état MoonX test
+test_moonx.py
