@@ -127,13 +127,25 @@ def run():
                 position_exists = True
 
             if not position_exists:
+                # Récupérer le PnL réalisé depuis l'historique MoonX
+                try:
+                    history = ex._call("get_futures_trade_history")
+                    last_trade = history[0] if isinstance(history, list) and history else {}
+                    pnl_realise = float(last_trade.get("pnl", 0))
+                    fee = float(last_trade.get("feeAmount", 0))
+                    net = pnl_realise - fee
+                    pnl_str = f"`{net:+.4f} USDT` ({'gain' if net >= 0 else 'perte'})"
+                except Exception:
+                    pnl_str = "indisponible"
                 state["position"] = None
                 save_state(state)
                 print(f"[{now_str}] Position cloturee par MoonX (SL/TP auto).")
                 tg(config["tg_token"], config["chat_id"],
-                   f"*POSITION CLOTUREE PAR MOONX*\n"
-                   f"La position {pos['side'].upper()} a ete fermee automatiquement.\n"
-                   f"Entree : `{pos['entry']:,.2f}` | SL : `{pos['sl']:,.2f}` | TP1 : `{pos['tp1']:,.2f}`")
+                   f"{'✅' if net >= 0 else '❌'} *POSITION CLOTUREE*\n"
+                   f"{pos['side'].upper()} BTC ferme automatiquement\n"
+                   f"Entree : `{pos['entry']:,.2f}` USDT\n"
+                   f"SL : `{pos['sl']:,.2f}` | TP1 : `{pos['tp1']:,.2f}`\n"
+                   f"Resultat net : {pnl_str}")
                 return
 
             df_quick = fetch_klines(config["symbol_binance"], config["interval"], limit=5)
@@ -169,6 +181,10 @@ def run():
                         ex.close_position(pos["id"], percentage=100)
                     except Exception:
                         pass
+                    if pos["side"] == "long":
+                        pnl_pct = (price_now - pos["entry"]) / pos["entry"] * 100 * config["leverage"]
+                    else:
+                        pnl_pct = (pos["entry"] - price_now) / pos["entry"] * 100 * config["leverage"]
                     state["consecutive_losses"] += 1
                     was_locked = state["consecutive_losses"] >= config["max_losses"]
                     if was_locked:
@@ -177,26 +193,27 @@ def run():
                     save_state(state)
                     print(f"[{now_str}] Sortie SuperTrend @ {price_now:.2f} | Pertes : {state['consecutive_losses']}")
                     tg(config["tg_token"], config["chat_id"],
-                       f"*SORTIE AUTO - RETOURNEMENT SUPERTREND*\n"
-                       f"Prix de sortie : `{price_now:,.2f}`\n"
+                       f"{'✅' if pnl_pct >= 0 else '❌'} *SORTIE - RETOURNEMENT SUPERTREND*\n"
+                       f"{pos['side'].upper()} BTC ferme\n"
+                       f"Entree : `{pos['entry']:,.2f}` → Sortie : `{price_now:,.2f}`\n"
+                       f"Resultat : `{pnl_pct:+.2f}%` sur marge\n"
                        + ("*Session verrouillee. Reprise a la prochaine fenetre.*" if was_locked else ""))
                 else:
-                    print(f"[{now_str}] Position {pos['side']} en cours | Prix : {price_now:.2f}")
-                    pnl = (price_now - pos["entry"]) / pos["entry"] * 100 * config["leverage"] if pos["side"] == "long" else (pos["entry"] - price_now) / pos["entry"] * 100 * config["leverage"]
+                    pnl_pct = (price_now - pos["entry"]) / pos["entry"] * 100 * config["leverage"] if pos["side"] == "long" else (pos["entry"] - price_now) / pos["entry"] * 100 * config["leverage"]
+                    print(f"[{now_str}] Position {pos['side']} en cours | Prix : {price_now:.2f} | PnL : {pnl_pct:+.2f}%")
                     tg(config["tg_token"], config["chat_id"],
-                       f"📊 *Surveillance position*\n"
+                       f"📊 *Position en cours*\n"
                        f"{pos['side'].upper()} BTC | Prix : `{price_now:,.2f}`\n"
-                       f"Entree : `{pos['entry']:,.2f}` | PnL : `{pnl:+.2f}%`\n"
-                       f"SL : `{pos['sl']:,.2f}` | TP1 : `{pos['tp1']:,.2f}`\n"
-                       f"SuperTrend : {'haussier ↑' if int(last['trend']) == 1 else 'baissier ↓'}")
+                       f"Entree : `{pos['entry']:,.2f}` | PnL : `{pnl_pct:+.2f}%`\n"
+                       f"SL : `{pos['sl']:,.2f}` | TP1 : `{pos['tp1']:,.2f}`")
             else:
+                pnl_pct = (price_now - pos["entry"]) / pos["entry"] * 100 * config["leverage"] if pos["side"] == "long" else (pos["entry"] - price_now) / pos["entry"] * 100 * config["leverage"]
                 print(f"[{now_str}] En attente TP2 ({pos['tp2']:.2f}) | Prix : {price_now:.2f}")
-                pnl = (price_now - pos["entry"]) / pos["entry"] * 100 * config["leverage"] if pos["side"] == "long" else (pos["entry"] - price_now) / pos["entry"] * 100 * config["leverage"]
                 tg(config["tg_token"], config["chat_id"],
                    f"📊 *En attente TP2*\n"
                    f"{pos['side'].upper()} BTC | Prix : `{price_now:,.2f}`\n"
-                   f"Entree : `{pos['entry']:,.2f}` | PnL : `{pnl:+.2f}%`\n"
-                   f"BE actif | TP2 : `{pos['tp2']:,.2f}`")
+                   f"PnL : `{pnl_pct:+.2f}%` | BE actif\n"
+                   f"TP2 cible : `{pos['tp2']:,.2f}`")
 
         # ── 2. RECHERCHE D'UN SIGNAL ─────────────────────────────────
         elif active:
@@ -268,11 +285,6 @@ def run():
                             print(f"[{now_str}] Signal {signal} detecte mais aucun positionId recu.")
                 else:
                     print(f"[{now_str}] Pas de signal | Prix : {price:.2f} | Tendance : {int(last['trend'])}")
-                    tg(config["tg_token"], config["chat_id"],
-                       f"🔍 *Scan marché*\n"
-                       f"BTC : `{price:,.2f}` USDT\n"
-                       f"SuperTrend : {trend_str}\n"
-                       f"Pas de signal → en attente")
 
         # ── 3. HORS FENETRE ──────────────────────────────────────────
         else:
