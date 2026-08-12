@@ -182,8 +182,21 @@ def run():
                        + ("*Session verrouillee. Reprise a la prochaine fenetre.*" if was_locked else ""))
                 else:
                     print(f"[{now_str}] Position {pos['side']} en cours | Prix : {price_now:.2f}")
+                    pnl = (price_now - pos["entry"]) / pos["entry"] * 100 * config["leverage"] if pos["side"] == "long" else (pos["entry"] - price_now) / pos["entry"] * 100 * config["leverage"]
+                    tg(config["tg_token"], config["chat_id"],
+                       f"📊 *Surveillance position*\n"
+                       f"{pos['side'].upper()} BTC | Prix : `{price_now:,.2f}`\n"
+                       f"Entree : `{pos['entry']:,.2f}` | PnL : `{pnl:+.2f}%`\n"
+                       f"SL : `{pos['sl']:,.2f}` | TP1 : `{pos['tp1']:,.2f}`\n"
+                       f"SuperTrend : {'haussier ↑' if int(last['trend']) == 1 else 'baissier ↓'}")
             else:
                 print(f"[{now_str}] En attente TP2 ({pos['tp2']:.2f}) | Prix : {price_now:.2f}")
+                pnl = (price_now - pos["entry"]) / pos["entry"] * 100 * config["leverage"] if pos["side"] == "long" else (pos["entry"] - price_now) / pos["entry"] * 100 * config["leverage"]
+                tg(config["tg_token"], config["chat_id"],
+                   f"📊 *En attente TP2*\n"
+                   f"{pos['side'].upper()} BTC | Prix : `{price_now:,.2f}`\n"
+                   f"Entree : `{pos['entry']:,.2f}` | PnL : `{pnl:+.2f}%`\n"
+                   f"BE actif | TP2 : `{pos['tp2']:,.2f}`")
 
         # ── 2. RECHERCHE D'UN SIGNAL ─────────────────────────────────
         elif active:
@@ -197,6 +210,7 @@ def run():
                 price = float(last["close"])
                 st_level = float(last["supertrend"])
 
+                trend_str = "haussier ↑" if int(last["trend"]) == 1 else "baissier ↓"
                 if signal in ("LONG", "SHORT") and signal != state.get("last_signal"):
                     if signal == "LONG":
                         sl = st_level
@@ -254,6 +268,11 @@ def run():
                             print(f"[{now_str}] Signal {signal} detecte mais aucun positionId recu.")
                 else:
                     print(f"[{now_str}] Pas de signal | Prix : {price:.2f} | Tendance : {int(last['trend'])}")
+                    tg(config["tg_token"], config["chat_id"],
+                       f"🔍 *Scan marché*\n"
+                       f"BTC : `{price:,.2f}` USDT\n"
+                       f"SuperTrend : {trend_str}\n"
+                       f"Pas de signal → en attente")
 
         # ── 3. HORS FENETRE ──────────────────────────────────────────
         else:
