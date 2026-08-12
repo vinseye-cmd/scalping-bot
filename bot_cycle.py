@@ -197,7 +197,7 @@ def run():
                 price = float(last["close"])
                 st_level = float(last["supertrend"])
 
-                if signal and signal != state.get("last_signal"):
+                if signal in ("LONG", "SHORT") and signal != state.get("last_signal"):
                     if signal == "LONG":
                         sl = st_level
                         dist = price - sl
