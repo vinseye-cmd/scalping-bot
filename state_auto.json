@@ -1,5 +1,14 @@
 {
-  "position": null,
+  "position": {
+    "id": "6a7c1b23d5e00a91f02dd7dc",
+    "side": "long",
+    "entry": 63777.37,
+    "sl": 63599.11,
+    "tp1": 63888.69,
+    "tp2": 63961.09,
+    "tp1_hit": false,
+    "session_idx": 0
+  },
   "consecutive_losses": 0,
   "locked_session_idx": -1,
   "last_signal": "LONG",

@@ -126,7 +126,7 @@ def run():
                 # Vérifier que la position existe encore sur MoonX
                 try:
                     live = ex.get_open_positions()
-                    live_ids = [str(p.get("positionId", p.get("id", ""))) for p in live]
+                    live_ids = [str(p.get("positionId", p.get("id", p.get("_id", "")))) for p in live]
                     position_exists = pos["id"] in live_ids
                 except Exception:
                     position_exists = True  # si la vérification échoue, on assume ouverte
