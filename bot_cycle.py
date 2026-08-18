@@ -246,7 +246,9 @@ def run():
                         balance = ex.get_futures_balance()
                         risk_usdt = balance * config["risk_pct"] / 100
                         sl_pct = dist / price
-                        margin = max(5.0, round(risk_usdt / sl_pct / config["leverage"], 2))
+                        margin_calc = round(risk_usdt / sl_pct / config["leverage"], 2)
+                        max_margin = round(balance * 0.15, 2)  # jamais plus de 15% du wallet
+                        margin = max(5.0, min(margin_calc, max_margin))
 
                         pos_id = ex.open_position(
                             side=signal.lower(),
