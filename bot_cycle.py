@@ -260,29 +260,55 @@ def run():
                         )
 
                         if pos_id:
-                            ex.set_tp_sl(pos_id, tp_price=round(tp1, 2), sl_price=round(sl, 2), tp_fraction=50)
+                            # Récupérer le prix de remplissage réel sur MoonX
+                            try:
+                                live = ex.get_open_positions()
+                                fill_price = next(
+                                    (float(p["entryPrice"]) for p in live
+                                     if str(p.get("positionId", p.get("id", p.get("_id", "")))) == pos_id),
+                                    price
+                                )
+                            except Exception:
+                                fill_price = price
+
+                            # Recalculer TP/SL depuis le prix réel de remplissage
+                            if signal == "LONG":
+                                real_dist = fill_price - sl
+                                real_tp1 = fill_price + real_dist * config["rr_tp1"]
+                                real_tp2 = fill_price + real_dist * config["rr_tp2"]
+                            else:
+                                real_dist = sl - fill_price
+                                real_tp1 = fill_price - real_dist * config["rr_tp1"]
+                                real_tp2 = fill_price - real_dist * config["rr_tp2"]
+
+                            if real_dist > 0:
+                                ex.set_tp_sl(pos_id, tp_price=round(real_tp1, 2), sl_price=round(sl, 2), tp_fraction=50)
+                            else:
+                                ex.set_tp_sl(pos_id, tp_price=round(tp1, 2), sl_price=round(sl, 2), tp_fraction=50)
+                                real_tp1, real_tp2 = tp1, tp2
+
                             state["position"] = {
                                 "id": pos_id,
                                 "side": signal.lower(),
-                                "entry": price,
+                                "entry": fill_price,
                                 "sl": round(sl, 2),
-                                "tp1": round(tp1, 2),
-                                "tp2": round(tp2, 2),
+                                "tp1": round(real_tp1, 2),
+                                "tp2": round(real_tp2, 2),
                                 "tp1_hit": False,
                                 "session_idx": sess_idx,
                             }
                             state["last_signal"] = signal
                             state["consecutive_losses"] = 0
                             save_state(state)
-                            print(f"[{now_str}] ORDRE {signal} @ {price:.2f} | SL={sl:.2f} | TP1={tp1:.2f} | Marge={margin:.2f} USDT")
+                            print(f"[{now_str}] ORDRE {signal} @ {fill_price:.2f} | SL={sl:.2f} | TP1={real_tp1:.2f} | Marge={margin:.2f} USDT")
                             tg(config["tg_token"], config["chat_id"],
                                f"*ORDRE AUTO EXECUTE - {signal}*\n"
                                f"Actif : `{config['symbol_moonx']}`\n"
-                               f"Prix entree : `{price:,.2f}` USDT\n"
+                               f"Prix entree : `{fill_price:,.2f}` USDT\n"
                                f"Marge : `{margin:.2f}` USDT | Levier : `{config['leverage']}x`\n"
                                f"SL : `{sl:,.2f}`\n"
-                               f"TP1 (50%, BE) : `{tp1:,.2f}`\n"
-                               f"TP2 (100%) : `{tp2:,.2f}`")
+                               f"TP1 (50%, BE) : `{real_tp1:,.2f}`\n"
+                               f"TP2 (100%) : `{real_tp2:,.2f}`")
                         else:
                             print(f"[{now_str}] Signal {signal} detecte mais aucun positionId recu.")
                 else:
