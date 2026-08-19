@@ -1,14 +1,5 @@
 {
-  "position": {
-    "id": "6a85f9c91f71ea4036a86ca1",
-    "side": "long",
-    "entry": 68422.8933901513,
-    "sl": 68100.2,
-    "tp1": 68745.59,
-    "tp2": 68906.93,
-    "tp1_hit": false,
-    "session_idx": 2
-  },
+  "position": null,
   "consecutive_losses": 0,
   "locked_session_idx": -1,
   "last_signal": "LONG",
