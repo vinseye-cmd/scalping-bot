@@ -13,7 +13,7 @@ import pytz
 from dotenv import load_dotenv
 
 from executor import MoonXExecutor
-from indicators import build_signal
+from indicators import build_signal, get_htf_trend
 from market_data import fetch_klines
 from notifier import send_status_message
 
@@ -202,6 +202,16 @@ def run():
                     signal = last["signal"]
                     price = float(last["close"])
                     st_level = float(last["supertrend"])
+
+                    # Filtre de tendance 1h : on n'ouvre que dans le sens de la tendance dominante
+                    df_1h = fetch_klines(config["symbol_binance"], "1h", limit=60)
+                    htf_trend = get_htf_trend(df_1h, config["atr_period"], config["atr_mult"])
+                    htf_label = "haussier ↑" if htf_trend == 1 else "baissier ↓"
+
+                    if signal in ("LONG", "SHORT") and signal != state.get("last_signal"):
+                        if (signal == "LONG" and htf_trend == -1) or (signal == "SHORT" and htf_trend == 1):
+                            print(f"[{now_str}] Signal {signal} ignoré — tendance 1h {htf_label}")
+                            continue
 
                     if signal in ("LONG", "SHORT") and signal != state.get("last_signal"):
                         if signal == "LONG":

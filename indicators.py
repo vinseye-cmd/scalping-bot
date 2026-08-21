@@ -82,6 +82,12 @@ def compute_ema(df: pd.DataFrame, period: int = 21) -> pd.Series:
     return df["close"].ewm(span=period, adjust=False).mean()
 
 
+def get_htf_trend(df: pd.DataFrame, atr_period: int = 10, atr_mult: float = 2.0) -> int:
+    """SuperTrend sur timeframe supérieur (1h). Retourne 1 (haussier) ou -1 (baissier)."""
+    df = compute_supertrend(df, atr_period, atr_mult)
+    return int(df["trend"].iloc[-2])
+
+
 def build_signal(df: pd.DataFrame, atr_period: int, atr_mult: float, ema_period: int) -> pd.DataFrame:
     """
     Ajoute les colonnes supertrend, trend, ema et signal à df.
