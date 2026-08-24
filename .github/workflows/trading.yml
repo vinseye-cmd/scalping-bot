@@ -39,12 +39,12 @@ jobs:
           MOONX_SYMBOL: BTC
           INTERVAL: 5m
           ATR_PERIOD: "10"
-          ATR_MULTIPLIER: "2.0"
-          EMA_PERIOD: "13"
+          ATR_MULTIPLIER: "3.0"
+          EMA_PERIOD: "21"
           LEVERAGE: "10"
           RISK_PCT: "1.0"
           RR_TP1: "1.0"
-          RR_TP2: "1.5"
+          RR_TP2: "3.0"
           MAX_CONSECUTIVE_LOSSES: "2"
           TRADING_WINDOWS: "09:00-13:00,14:00-17:00,20:00-23:00"
         run: python bot_cycle.py

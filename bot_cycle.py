@@ -247,12 +247,13 @@ def run():
 
                 # Filtre de tendance 1h : on n'ouvre que dans le sens de la tendance dominante
                 df_1h = fetch_klines(config["symbol_binance"], "1h", limit=60)
-                htf_trend = get_htf_trend(df_1h, config["atr_period"], config["atr_mult"])
-                htf_label = "haussier" if htf_trend == 1 else "baissier"
+                htf_trend = get_htf_trend(df_1h, config["atr_period"], config["atr_mult"], config["ema_period"])
+                htf_labels = {1: "haussier", -1: "baissier", 0: "neutre (non confirme)"}
+                htf_label = htf_labels.get(htf_trend, "inconnu")
 
                 if signal in ("LONG", "SHORT") and signal != state.get("last_signal"):
-                    if (signal == "LONG" and htf_trend == -1) or (signal == "SHORT" and htf_trend == 1):
-                        print(f"[{now_str}] Signal {signal} ignoré — tendance 1h {htf_label}")
+                    if (signal == "LONG" and htf_trend != 1) or (signal == "SHORT" and htf_trend != -1):
+                        print(f"[{now_str}] Signal {signal} bloque — tendance 1h {htf_label}")
                         return
 
                 if signal in ("LONG", "SHORT") and signal != state.get("last_signal"):
