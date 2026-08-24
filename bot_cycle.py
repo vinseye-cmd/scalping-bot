@@ -40,7 +40,7 @@ def load_config() -> dict:
         "leverage": int(os.getenv("LEVERAGE", 10)),
         "risk_pct": float(os.getenv("RISK_PCT", 1.0)),
         "rr_tp1": float(os.getenv("RR_TP1", 1.0)),
-        "rr_tp2": float(os.getenv("RR_TP2", 1.5)),
+        "rr_tp2": float(os.getenv("RR_TP2", 3.0)),
         "max_losses": int(os.getenv("MAX_CONSECUTIVE_LOSSES", 2)),
         "trading_windows": os.getenv("TRADING_WINDOWS", "09:00-13:00,14:00-17:00"),
     }
@@ -207,13 +207,31 @@ def run():
                        f"Entree : `{pos['entry']:,.2f}` | PnL : `{pnl_pct:+.2f}%`\n"
                        f"SL : `{pos['sl']:,.2f}` | TP1 : `{pos['tp1']:,.2f}`")
             else:
+                # Trailing stop : faire suivre le SL sur la ligne SuperTrend 5m
+                try:
+                    df_trail = fetch_klines(config["symbol_binance"], config["interval"], limit=150)
+                    df_trail = build_signal(df_trail, config["atr_period"], config["atr_mult"], config["ema_period"])
+                    trail_st = float(df_trail["supertrend"].iloc[-2])
+                    current_sl = pos["sl"]
+                    if pos["side"] == "long":
+                        new_sl = round(max(current_sl, trail_st), 2)
+                    else:
+                        new_sl = round(min(current_sl, trail_st), 2)
+                    if new_sl != current_sl:
+                        ex.set_tp_sl(pos["id"], sl_price=new_sl, tp_price=pos["tp2"], tp_fraction=100)
+                        state["position"]["sl"] = new_sl
+                        save_state(state)
+                        print(f"[{now_str}] Trailing SL: {current_sl:.2f} -> {new_sl:.2f}")
+                        tg(config["tg_token"], config["chat_id"],
+                           f"*TRAILING STOP AJUSTE*\n"
+                           f"{pos['side'].upper()} BTC | Prix : `{price_now:,.2f}`\n"
+                           f"SL : `{current_sl:,.2f}` -> `{new_sl:,.2f}`\n"
+                           f"TP2 cible : `{pos['tp2']:,.2f}`")
+                except Exception as trail_err:
+                    print(f"[{now_str}] Trailing SL non mis a jour : {trail_err}")
+
                 pnl_pct = (price_now - pos["entry"]) / pos["entry"] * 100 * config["leverage"] if pos["side"] == "long" else (pos["entry"] - price_now) / pos["entry"] * 100 * config["leverage"]
-                print(f"[{now_str}] En attente TP2 ({pos['tp2']:.2f}) | Prix : {price_now:.2f}")
-                tg(config["tg_token"], config["chat_id"],
-                   f"📊 *En attente TP2*\n"
-                   f"{pos['side'].upper()} BTC | Prix : `{price_now:,.2f}`\n"
-                   f"PnL : `{pnl_pct:+.2f}%` | BE actif\n"
-                   f"TP2 cible : `{pos['tp2']:,.2f}`")
+                print(f"[{now_str}] En attente TP2 ({pos['tp2']:.2f}) | SL trailing: {pos['sl']:.2f} | Prix: {price_now:.2f}")
 
         # ── 2. RECHERCHE D'UN SIGNAL ─────────────────────────────────
         elif active:
@@ -227,7 +245,6 @@ def run():
                 price = float(last["close"])
                 st_level = float(last["supertrend"])
 
-                trend_str = "haussier ↑" if int(last["trend"]) == 1 else "baissier ↓"
                 # Filtre de tendance 1h : on n'ouvre que dans le sens de la tendance dominante
                 df_1h = fetch_klines(config["symbol_binance"], "1h", limit=60)
                 htf_trend = get_htf_trend(df_1h, config["atr_period"], config["atr_mult"])
