@@ -47,6 +47,9 @@ jobs:
           RR_TP2: "3.0"
           MAX_CONSECUTIVE_LOSSES: "2"
           TRADING_WINDOWS: "09:00-13:00,14:00-17:00,20:00-23:00"
+          FIB_LOOKBACK: "80"
+          FIB_N_SIDE: "5"
+          FIB_TOLERANCE: "0.0025"
         run: python bot_cycle.py
 
       - name: Sauvegarder l'état

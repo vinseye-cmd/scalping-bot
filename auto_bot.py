@@ -1,6 +1,6 @@
 """
-Bot de scalping 100% autonome - SuperTrend + EMA -> execution directe sur MoonX.
-Aucune validation humaine requise. Lancement : python auto_bot.py
+Bot autonome local — Stratégie 0.5 (Fibonacci 50% retracement).
+Lancement : python auto_bot.py
 """
 
 import json
@@ -13,7 +13,8 @@ import pytz
 from dotenv import load_dotenv
 
 from executor import MoonXExecutor
-from indicators import build_signal, get_htf_trend
+from indicators import (build_fib05_signal, compute_supertrend,
+                        get_htf_trend, get_session_opening_bias)
 from market_data import fetch_klines
 from notifier import send_status_message
 
@@ -34,16 +35,17 @@ def load_config() -> dict:
         "moonx_token": os.getenv("MOONX_API_TOKEN"),
         "symbol_binance": os.getenv("SYMBOL", "BTCUSDT"),
         "symbol_moonx": os.getenv("MOONX_SYMBOL", "BTC"),
-        "interval": os.getenv("INTERVAL", "1m"),
+        "interval": os.getenv("INTERVAL", "5m"),
         "atr_period": int(os.getenv("ATR_PERIOD", 10)),
-        "atr_mult": float(os.getenv("ATR_MULTIPLIER", 2.0)),
+        "atr_mult": float(os.getenv("ATR_MULTIPLIER", 3.0)),
         "ema_period": int(os.getenv("EMA_PERIOD", 21)),
         "leverage": int(os.getenv("LEVERAGE", 10)),
         "risk_pct": float(os.getenv("RISK_PCT", 1.0)),
-        "rr_tp1": float(os.getenv("RR_TP1", 1.0)),
-        "rr_tp2": float(os.getenv("RR_TP2", 3.0)),
         "max_losses": int(os.getenv("MAX_CONSECUTIVE_LOSSES", 2)),
-        "trading_windows": os.getenv("TRADING_WINDOWS", "09:00-13:00,14:00-17:00"),
+        "trading_windows": os.getenv("TRADING_WINDOWS", "09:00-13:00,14:00-17:00,20:00-23:00"),
+        "fib_lookback": int(os.getenv("FIB_LOOKBACK", 80)),
+        "fib_n_side": int(os.getenv("FIB_N_SIDE", 5)),
+        "fib_tolerance": float(os.getenv("FIB_TOLERANCE", 0.0025)),
     }
 
 
@@ -79,6 +81,7 @@ def load_state() -> dict:
         "consecutive_losses": 0,
         "locked_session_idx": -1,
         "last_signal": None,
+        "session_bias": {},
     }
 
 
@@ -105,12 +108,12 @@ def run():
     except Exception as e:
         balance_str = f"indisponible ({e})"
 
-    print(f"Bot Auto-Scalp demarre | Solde futures : {balance_str}")
+    print(f"Bot Strategie 0.5 demarre | Solde futures : {balance_str}")
     tg(config["tg_token"], config["chat_id"],
-       f"*Bot Auto-Scalp ACTIF*\n"
-       f"Actif : `{config['symbol_moonx']}`\n"
+       f"*Bot Strategie 0.5 ACTIF*\n"
+       f"Signal : Fibonacci 50% + Englobante\n"
+       f"Actif : `{config['symbol_moonx']}` | Levier : `{config['leverage']}x`\n"
        f"Fenetres : `{config['trading_windows']}` (Paris)\n"
-       f"Levier : `{config['leverage']}x` | Risque/trade : `{config['risk_pct']}%`\n"
        f"Solde futures : `{balance_str}`")
 
     while True:
@@ -119,31 +122,29 @@ def run():
         active = sess_idx >= 0
 
         try:
-            # ── 1. SURVEILLANCE DE LA POSITION OUVERTE ──────────────────
+            # ── 1. SURVEILLANCE DE LA POSITION OUVERTE ──────────────
             if state["position"]:
                 pos = state["position"]
 
-                # Vérifier que la position existe encore sur MoonX
                 try:
                     live = ex.get_open_positions()
                     live_ids = [str(p.get("positionId", p.get("id", p.get("_id", "")))) for p in live]
                     position_exists = pos["id"] in live_ids
                 except Exception:
-                    position_exists = True  # si la vérification échoue, on assume ouverte
+                    position_exists = True
 
                 if not position_exists:
                     state["position"] = None
                     save_state(state)
-                    print(f"[{now_str}] Position cloturee par MoonX (SL/TP auto).")
+                    print(f"[{now_str}] Position cloturee par MoonX (SL/TP).")
                     tg(config["tg_token"], config["chat_id"],
                        f"*POSITION CLOTUREE PAR MOONX*\n"
-                       f"La position {pos['side'].upper()} a ete fermee automatiquement (SL ou TP atteint).\n"
-                       f"Entree : `{pos['entry']:,.2f}` | SL : `{pos['sl']:,.2f}` | TP1 : `{pos['tp1']:,.2f}`")
+                       f"{pos['side'].upper()} BTC ferme automatiquement\n"
+                       f"Entree : `{pos['entry']:,.2f}` | SL : `{pos['sl']:,.2f}` | TP : `{pos['tp2']:,.2f}`")
                 else:
                     df_quick = fetch_klines(config["symbol_binance"], config["interval"], limit=5)
                     price_now = float(df_quick.iloc[-1]["close"])
 
-                    # TP1 atteint ?
                     if not pos["tp1_hit"]:
                         tp1_hit = (
                             (pos["side"] == "long" and price_now >= pos["tp1"]) or
@@ -154,17 +155,16 @@ def run():
                             state["position"]["tp1_hit"] = True
                             state["position"]["sl"] = pos["entry"]
                             save_state(state)
-                            print(f"[{now_str}] TP1 @ {price_now:.2f} | SL -> BE {pos['entry']:.2f} | TP2 -> {pos['tp2']:.2f}")
+                            print(f"[{now_str}] TP1 @ {price_now:.2f} | SL -> BE | TP2 -> {pos['tp2']:.2f}")
                             tg(config["tg_token"], config["chat_id"],
                                f"*TP1 ATTEINT - BREAKEVEN ACTIVE*\n"
-                               f"Prix : `{price_now:,.2f}`\n"
+                               f"{pos['side'].upper()} BTC | Prix : `{price_now:,.2f}`\n"
                                f"SL deplace a l'entree : `{pos['entry']:,.2f}`\n"
-                               f"Objectif TP2 : `{pos['tp2']:,.2f}`")
+                               f"Objectif Fib 0 : `{pos['tp2']:,.2f}`")
 
-                    # Retournement SuperTrend avant TP1 -> sortie defensive
                     if not pos["tp1_hit"]:
                         df_full = fetch_klines(config["symbol_binance"], config["interval"], limit=150)
-                        df_full = build_signal(df_full, config["atr_period"], config["atr_mult"], config["ema_period"])
+                        df_full = compute_supertrend(df_full, config["atr_period"], config["atr_mult"])
                         last = df_full.iloc[-2]
                         reversed_ = (
                             (pos["side"] == "long" and int(last["trend"]) == -1) or
@@ -174,25 +174,25 @@ def run():
                             try:
                                 ex.close_position(pos["id"], percentage=100)
                             except Exception:
-                                pass  # position déjà fermée par MoonX
+                                pass
                             state["consecutive_losses"] += 1
                             was_locked = state["consecutive_losses"] >= config["max_losses"]
                             if was_locked:
                                 state["locked_session_idx"] = sess_idx
                             state["position"] = None
                             save_state(state)
-                            print(f"[{now_str}] Sortie SuperTrend @ {price_now:.2f} | Pertes : {state['consecutive_losses']}")
+                            print(f"[{now_str}] Sortie SuperTrend @ {price_now:.2f}")
                             tg(config["tg_token"], config["chat_id"],
-                               f"*SORTIE AUTO - RETOURNEMENT SUPERTREND*\n"
-                               f"Prix de sortie : `{price_now:,.2f}`\n"
-                               + ("*Session verrouillee (2 pertes). Reprise a la prochaine fenetre.*" if was_locked else ""))
+                               f"*SORTIE - RETOURNEMENT SUPERTREND*\n"
+                               f"{pos['side'].upper()} BTC | Prix : `{price_now:,.2f}`"
+                               + ("\n*Session verrouillee.*" if was_locked else ""))
                         else:
-                            print(f"[{now_str}] Position {pos['side']} ouverte | Prix : {price_now:.2f}")
+                            print(f"[{now_str}] Position {pos['side']} | Prix : {price_now:.2f}")
                     else:
-                        # Trailing stop : faire suivre le SL sur la ligne SuperTrend 5m
+                        # Trailing stop SuperTrend après TP1
                         try:
                             df_trail = fetch_klines(config["symbol_binance"], config["interval"], limit=150)
-                            df_trail = build_signal(df_trail, config["atr_period"], config["atr_mult"], config["ema_period"])
+                            df_trail = compute_supertrend(df_trail, config["atr_period"], config["atr_mult"])
                             trail_st = float(df_trail["supertrend"].iloc[-2])
                             current_sl = pos["sl"]
                             if pos["side"] == "long":
@@ -206,127 +206,134 @@ def run():
                                 print(f"[{now_str}] Trailing SL: {current_sl:.2f} -> {new_sl:.2f}")
                                 tg(config["tg_token"], config["chat_id"],
                                    f"*TRAILING STOP AJUSTE*\n"
-                                   f"{pos['side'].upper()} BTC | Prix : `{price_now:,.2f}`\n"
                                    f"SL : `{current_sl:,.2f}` -> `{new_sl:,.2f}`\n"
                                    f"TP2 cible : `{pos['tp2']:,.2f}`")
                         except Exception as trail_err:
                             print(f"[{now_str}] Trailing SL non mis a jour : {trail_err}")
-                        print(f"[{now_str}] En attente TP2 ({pos['tp2']:.2f}) | SL trailing: {pos['sl']:.2f} | Prix: {price_now:.2f}")
+                        print(f"[{now_str}] En attente Fib-0 ({pos['tp2']:.2f}) | SL: {pos['sl']:.2f} | Prix: {price_now:.2f}")
 
-            # ── 2. RECHERCHE D'UN SIGNAL ─────────────────────────────────
+            # ── 2. RECHERCHE D'UN SIGNAL ─────────────────────────────
             elif active:
                 if state["locked_session_idx"] == sess_idx:
-                    print(f"[{now_str}] Session verrouillee. Pas d'ordre.")
+                    print(f"[{now_str}] Session verrouillee.")
                 else:
                     df = fetch_klines(config["symbol_binance"], config["interval"], limit=150)
-                    df = build_signal(df, config["atr_period"], config["atr_mult"], config["ema_period"])
-                    last = df.iloc[-2]
-                    signal = last["signal"]
-                    price = float(last["close"])
-                    st_level = float(last["supertrend"])
 
-                    # Filtre de tendance 1h : on n'ouvre que dans le sens de la tendance dominante
+                    # Biais d'ouverture de session
+                    session_biases = state.get("session_bias", {})
+                    bias_key = str(sess_idx)
+                    if bias_key not in session_biases:
+                        opening_bias = get_session_opening_bias(df, config["ema_period"])
+                        session_biases[bias_key] = opening_bias
+                        state["session_bias"] = session_biases
+                        save_state(state)
+                        bias_label = "haussier" if opening_bias == 1 else "baissier"
+                        print(f"[{now_str}] Biais session : {bias_label}")
+                    opening_bias = session_biases.get(bias_key, 0)
+
+                    # Filtre HTF 1h
                     df_1h = fetch_klines(config["symbol_binance"], "1h", limit=60)
                     htf_trend = get_htf_trend(df_1h, config["atr_period"], config["atr_mult"], config["ema_period"])
-                    htf_labels = {1: "haussier", -1: "baissier", 0: "neutre (non confirme)"}
-                    htf_label = htf_labels.get(htf_trend, "inconnu")
+                    htf_labels = {1: "haussier", -1: "baissier", 0: "neutre"}
+                    htf_label = htf_labels.get(htf_trend, "?")
+
+                    # Signal Stratégie 0.5
+                    signal, fib_sl, fib_tp = build_fib05_signal(
+                        df,
+                        n_lookback=config["fib_lookback"],
+                        n_side=config["fib_n_side"],
+                        tolerance=config["fib_tolerance"],
+                    )
+                    price = float(df.iloc[-2]["close"])
 
                     if signal in ("LONG", "SHORT") and signal != state.get("last_signal"):
                         if (signal == "LONG" and htf_trend != 1) or (signal == "SHORT" and htf_trend != -1):
                             print(f"[{now_str}] Signal {signal} bloque — tendance 1h {htf_label}")
                             continue
 
-                    if signal in ("LONG", "SHORT") and signal != state.get("last_signal"):
-                        if signal == "LONG":
-                            sl = st_level
-                            dist = price - sl
-                            tp1 = price + dist * config["rr_tp1"]
-                            tp2 = price + dist * config["rr_tp2"]
-                        else:
-                            sl = st_level
-                            dist = sl - price
-                            tp1 = price - dist * config["rr_tp1"]
-                            tp2 = price - dist * config["rr_tp2"]
+                        if opening_bias != 0 and (
+                            (signal == "LONG" and opening_bias != 1) or
+                            (signal == "SHORT" and opening_bias != -1)
+                        ):
+                            print(f"[{now_str}] Signal {signal} bloque — contra biais de session")
+                            continue
 
+                        dist = (price - fib_sl) if signal == "LONG" else (fib_sl - price)
                         if dist <= 0:
                             print(f"[{now_str}] Distance SL nulle, signal ignore.")
+                            continue
+
+                        tp1 = round((price + fib_tp) / 2, 2)
+                        fib_50_display = round((fib_sl + fib_tp) / 2, 2)
+
+                        balance = ex.get_futures_balance()
+                        risk_usdt = balance * config["risk_pct"] / 100
+                        sl_pct = dist / price
+                        margin_calc = round(risk_usdt / sl_pct / config["leverage"], 2)
+                        max_margin = round(balance * 0.15, 2)
+                        margin = max(5.0, min(margin_calc, max_margin))
+
+                        pos_id = ex.open_position(
+                            side=signal.lower(),
+                            symbol=config["symbol_moonx"],
+                            margin_usdt=margin,
+                            leverage=config["leverage"],
+                            sl_price=fib_sl,
+                            tp_price=tp1,
+                        )
+
+                        if pos_id:
+                            try:
+                                live = ex.get_open_positions()
+                                fill_price = next(
+                                    (float(p["entryPrice"]) for p in live
+                                     if str(p.get("positionId", p.get("id", p.get("_id", "")))) == pos_id),
+                                    price
+                                )
+                            except Exception:
+                                fill_price = price
+
+                            real_tp1 = round((fill_price + fib_tp) / 2, 2)
+                            ex.set_tp_sl(pos_id, tp_price=real_tp1, sl_price=fib_sl, tp_fraction=50)
+
+                            state["position"] = {
+                                "id": pos_id,
+                                "side": signal.lower(),
+                                "entry": fill_price,
+                                "sl": fib_sl,
+                                "tp1": real_tp1,
+                                "tp2": fib_tp,
+                                "tp1_hit": False,
+                                "session_idx": sess_idx,
+                            }
+                            state["last_signal"] = signal
+                            state["consecutive_losses"] = 0
+                            save_state(state)
+                            print(f"[{now_str}] STRATEGIE 0.5 {signal} @ {fill_price:.2f} | SL={fib_sl:.2f} | TP={fib_tp:.2f}")
+                            tg(config["tg_token"], config["chat_id"],
+                               f"*STRATEGIE 0.5 - {signal}*\n"
+                               f"Actif : `{config['symbol_moonx']}`\n"
+                               f"Entree (Fib 0.5) : `{fill_price:,.2f}` USDT\n"
+                               f"Marge : `{margin:.2f}` USDT | Levier : `{config['leverage']}x`\n"
+                               f"---- Fibonacci ----\n"
+                               f"Niveau 0 (objectif) : `{fib_tp:,.2f}`\n"
+                               f"Niveau 0.5 (entree) : `{fib_50_display:,.2f}`\n"
+                               f"Niveau 1 (SL) : `{fib_sl:,.2f}`\n"
+                               f"---- Ordres ----\n"
+                               f"SL : `{fib_sl:,.2f}`\n"
+                               f"TP1 (50%) : `{real_tp1:,.2f}`\n"
+                               f"TP2 (100%) : `{fib_tp:,.2f}`")
                         else:
-                            balance = ex.get_futures_balance()
-                            risk_usdt = balance * config["risk_pct"] / 100
-                            sl_pct = dist / price
-                            margin_calc = round(risk_usdt / sl_pct / config["leverage"], 2)
-                            max_margin = round(balance * 0.15, 2)  # jamais plus de 15% du wallet
-                            margin = max(5.0, min(margin_calc, max_margin))
-
-                            pos_id = ex.open_position(
-                                side=signal.lower(),
-                                symbol=config["symbol_moonx"],
-                                margin_usdt=margin,
-                                leverage=config["leverage"],
-                                sl_price=round(sl, 2),
-                                tp_price=round(tp1, 2),
-                            )
-
-                            if pos_id:
-                                # Récupérer le prix de remplissage réel sur MoonX
-                                try:
-                                    live = ex.get_open_positions()
-                                    fill_price = next(
-                                        (float(p["entryPrice"]) for p in live
-                                         if str(p.get("positionId", p.get("id", p.get("_id", "")))) == pos_id),
-                                        price
-                                    )
-                                except Exception:
-                                    fill_price = price
-
-                                # Recalculer TP/SL depuis le prix réel de remplissage
-                                if signal == "LONG":
-                                    real_dist = fill_price - sl
-                                    real_tp1 = fill_price + real_dist * config["rr_tp1"]
-                                    real_tp2 = fill_price + real_dist * config["rr_tp2"]
-                                else:
-                                    real_dist = sl - fill_price
-                                    real_tp1 = fill_price - real_dist * config["rr_tp1"]
-                                    real_tp2 = fill_price - real_dist * config["rr_tp2"]
-
-                                if real_dist > 0:
-                                    ex.set_tp_sl(pos_id, tp_price=round(real_tp1, 2), sl_price=round(sl, 2), tp_fraction=50)
-                                else:
-                                    ex.set_tp_sl(pos_id, tp_price=round(tp1, 2), sl_price=round(sl, 2), tp_fraction=50)
-                                    real_tp1, real_tp2 = tp1, tp2
-
-                                state["position"] = {
-                                    "id": pos_id,
-                                    "side": signal.lower(),
-                                    "entry": fill_price,
-                                    "sl": round(sl, 2),
-                                    "tp1": round(real_tp1, 2),
-                                    "tp2": round(real_tp2, 2),
-                                    "tp1_hit": False,
-                                    "session_idx": sess_idx,
-                                }
-                                state["last_signal"] = signal
-                                state["consecutive_losses"] = 0
-                                save_state(state)
-                                print(f"[{now_str}] ORDRE {signal} @ {fill_price:.2f} | SL={sl:.2f} | TP1={real_tp1:.2f} | Marge={margin:.2f} USDT")
-                                tg(config["tg_token"], config["chat_id"],
-                                   f"*ORDRE AUTO EXECUTE - {signal}*\n"
-                                   f"Actif : `{config['symbol_moonx']}`\n"
-                                   f"Prix entree : `{fill_price:,.2f}` USDT\n"
-                                   f"Marge : `{margin:.2f}` USDT | Levier : `{config['leverage']}x`\n"
-                                   f"SL : `{sl:,.2f}`\n"
-                                   f"TP1 (50%, BE) : `{real_tp1:,.2f}`\n"
-                                   f"TP2 (100%) : `{real_tp2:,.2f}`")
-                            else:
-                                print(f"[{now_str}] Signal {signal} detecte mais aucun positionId recu.")
+                            print(f"[{now_str}] Signal {signal} detecte mais positionId non recu.")
                     else:
-                        print(f"[{now_str}] Pas de signal | Prix : {price:.2f} | Tendance : {int(last['trend'])}")
+                        print(f"[{now_str}] Pas de signal Fib0.5 | Prix : {price:.2f} | HTF : {htf_label}")
 
-            # ── 3. HORS FENETRE ──────────────────────────────────────────
+            # ── 3. HORS FENETRE ──────────────────────────────────────
             else:
                 if state["locked_session_idx"] >= 0 and state["locked_session_idx"] != sess_idx:
                     state["locked_session_idx"] = -1
                     state["consecutive_losses"] = 0
+                    state["session_bias"] = {}
                     save_state(state)
                 print(f"[{now_str}] Hors fenetre horaire.")
 
