@@ -3,5 +3,8 @@
   "consecutive_losses": 0,
   "locked_session_idx": -1,
   "last_signal": "SHORT",
-  "last_heartbeat_date": "2026-08-25"
+  "last_heartbeat_date": "2026-08-26",
+  "session_bias": {
+    "0": -1
+  }
 }
