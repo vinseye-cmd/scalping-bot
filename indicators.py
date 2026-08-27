@@ -81,23 +81,17 @@ def compute_rsi(df: pd.DataFrame, period: int = 14) -> pd.Series:
 
 
 # ─────────────────────────────────────────────
-# Filtre tendance 1h (confirmation HTF)
+# Filtre tendance 1h (SuperTrend uniquement)
 # ─────────────────────────────────────────────
 
 def get_htf_trend(df: pd.DataFrame, atr_period: int = 10, atr_mult: float = 3.0,
                   ema_period: int = 21) -> int:
     """
-    Tendance 1h : SuperTrend ET prix vs EMA doivent être d'accord.
-    Retourne 1 (haussier confirmé), -1 (baissier confirmé), 0 (neutre).
+    Tendance 1h basée sur SuperTrend uniquement.
+    Retourne 1 (haussier) ou -1 (baissier).
     """
     df = compute_supertrend(df, atr_period, atr_mult)
-    df["ema"] = compute_ema(df, ema_period)
-    last = df.iloc[-2]
-    st_trend = int(last["trend"])
-    price_vs_ema = 1 if float(last["close"]) > float(last["ema"]) else -1
-    if st_trend == price_vs_ema:
-        return st_trend
-    return 0
+    return int(df.iloc[-2]["trend"])
 
 
 # ─────────────────────────────────────────────
@@ -132,42 +126,34 @@ def find_swing_low(df: pd.DataFrame, n_lookback: int = 80, n_side: int = 5):
     return None, -1
 
 
-def is_bullish_engulfing(df: pd.DataFrame) -> bool:
-    """Bougie englobante haussière : bougie verte englobant la bougie rouge précédente."""
-    if len(df) < 3:
+def is_bullish_confirmation(df: pd.DataFrame) -> bool:
+    """Confirmation haussière : dernière bougie clôturée verte (close > open)."""
+    if len(df) < 2:
         return False
-    prev = df.iloc[-3]
     curr = df.iloc[-2]
-    return (prev["close"] < prev["open"] and    # précédente rouge
-            curr["close"] > curr["open"] and    # actuelle verte
-            curr["open"] <= prev["close"] and   # ouvre sous la clôture précédente
-            curr["close"] >= prev["open"])      # ferme au-dessus de l'ouverture précédente
+    return float(curr["close"]) > float(curr["open"])
 
 
-def is_bearish_engulfing(df: pd.DataFrame) -> bool:
-    """Bougie englobante baissière : bougie rouge englobant la bougie verte précédente."""
-    if len(df) < 3:
+def is_bearish_confirmation(df: pd.DataFrame) -> bool:
+    """Confirmation baissière : dernière bougie clôturée rouge (close < open)."""
+    if len(df) < 2:
         return False
-    prev = df.iloc[-3]
     curr = df.iloc[-2]
-    return (prev["close"] > prev["open"] and    # précédente verte
-            curr["close"] < curr["open"] and    # actuelle rouge
-            curr["open"] >= prev["close"] and   # ouvre au-dessus de la clôture précédente
-            curr["close"] <= prev["open"])      # ferme sous l'ouverture précédente
+    return float(curr["close"]) < float(curr["open"])
 
 
 def build_fib05_signal(df: pd.DataFrame, n_lookback: int = 80, n_side: int = 5,
-                       tolerance: float = 0.0025):
+                       tolerance: float = 0.005):
     """
-    Stratégie 0.5 — Signal au retracement Fibonacci 50% confirmé par bougie englobante.
+    Stratégie 0.5 — Signal au retracement Fibonacci 50%.
 
     Logique :
-      - Identifier le Swing High (SH) et Swing Low (SL) récents
-      - Calculer le niveau 0.5 = (SH + SL) / 2
-      - Si le prix est proche du niveau 0.5 (tolérance 0.25%) :
-          LONG  : mouvement haussier initial (SL avant SH) + englobante haussière
-          SHORT : mouvement baissier initial (SH avant SL) + englobante baissière
-      - SL = l'extrême opposé (niveau 1), TP = l'extrême cible (niveau 0)
+      - Identifier Swing High (SH) et Swing Low (SL) récents
+      - Calculer niveau 0.5 = (SH + SL) / 2
+      - Si le prix est dans la zone 0.5 (±tolérance) :
+          LONG  : impulsion haussière (SL avant SH) + bougie verte de confirmation
+          SHORT : impulsion baissière (SH avant SL) + bougie rouge de confirmation
+      - SL = extrême opposé (niveau 1), TP = extrême cible (niveau 0)
 
     Retourne (signal, sl_price, tp_price) ou (None, None, None).
     """
@@ -187,30 +173,16 @@ def build_fib05_signal(df: pd.DataFrame, n_lookback: int = 80, n_side: int = 5,
     fib_50 = (sh + sl) / 2
     price = float(df.iloc[-2]["close"])
 
-    # Prix doit être proche du niveau 0.5
     if abs(price - fib_50) / price > tolerance:
         return None, None, None
 
     if sl_idx < sh_idx:
-        # Swing Low avant Swing High -> mouvement impulsif haussier -> pullback vers 0.5 -> LONG
-        if is_bullish_engulfing(df):
+        # Swing Low avant Swing High → impulsion haussière → pullback → LONG
+        if is_bullish_confirmation(df):
             return "LONG", round(sl, 2), round(sh, 2)
     else:
-        # Swing High avant Swing Low -> mouvement impulsif baissier -> rebond vers 0.5 -> SHORT
-        if is_bearish_engulfing(df):
+        # Swing High avant Swing Low → impulsion baissière → rebond → SHORT
+        if is_bearish_confirmation(df):
             return "SHORT", round(sh, 2), round(sl, 2)
 
     return None, None, None
-
-
-def get_session_opening_bias(df: pd.DataFrame, ema_period: int = 21) -> int:
-    """
-    Biais d'ouverture de session basé sur les 3 premières bougies (15 min).
-    Retourne 1 (haussier), -1 (baissier).
-    """
-    if len(df) < ema_period + 3:
-        return 0
-    df = df.copy()
-    df["ema"] = compute_ema(df, ema_period)
-    last = df.iloc[-2]
-    return 1 if float(last["close"]) > float(last["ema"]) else -1

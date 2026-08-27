@@ -2,7 +2,7 @@ name: Scalping Bot BTC
 
 on:
   schedule:
-    - cron: '*/5 * * * *'   # toutes les 5 minutes, 24h/24
+    - cron: '*/5 * * * *'   # toutes les 5 minutes, 24h/24 7j/7
   workflow_dispatch:          # déclenchement manuel possible
 
 concurrency:
@@ -43,13 +43,11 @@ jobs:
           EMA_PERIOD: "21"
           LEVERAGE: "10"
           RISK_PCT: "1.0"
-          RR_TP1: "1.0"
-          RR_TP2: "3.0"
           MAX_CONSECUTIVE_LOSSES: "2"
-          TRADING_WINDOWS: "09:00-13:00,14:00-17:00,20:00-23:00"
+          LOCK_HOURS: "2"
           FIB_LOOKBACK: "80"
           FIB_N_SIDE: "5"
-          FIB_TOLERANCE: "0.0025"
+          FIB_TOLERANCE: "0.005"
         run: python bot_cycle.py
 
       - name: Sauvegarder l'état
