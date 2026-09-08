@@ -1,15 +1,23 @@
 {
-  "position": null,
-  "consecutive_losses": 1,
+  "position": {
+    "id": "6aa06e2bc2994553dabd92af",
+    "side": "short",
+    "entry": 78448.756,
+    "sl": 78529.5,
+    "tp1": 78382.23,
+    "tp2": 78315.7,
+    "tp1_hit": false
+  },
+  "consecutive_losses": 0,
   "locked_session_idx": -1,
-  "last_signal": "LONG",
+  "last_signal": "SHORT",
   "last_heartbeat_date": "2026-08-26",
   "session_bias": {
     "0": -1,
     "1": -1,
     "2": 1
   },
-  "last_heartbeat_ts": "2026-09-08T17:47:00.760058+00:00",
+  "last_heartbeat_ts": "2026-09-08T20:20:56.909585+00:00",
   "last_htf_trend": -1,
   "locked_until": null
 }
