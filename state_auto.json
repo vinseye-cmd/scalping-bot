@@ -1,14 +1,6 @@
 {
-  "position": {
-    "id": "6aa16f088879de836987161c",
-    "side": "long",
-    "entry": 79388.6745,
-    "sl": 78737.5,
-    "tp1": 79532.14,
-    "tp2": 79675.6,
-    "tp1_hit": false
-  },
-  "consecutive_losses": 0,
+  "position": null,
+  "consecutive_losses": 1,
   "locked_session_idx": -1,
   "last_signal": "LONG",
   "last_heartbeat_date": "2026-08-26",
@@ -17,7 +9,7 @@
     "1": -1,
     "2": 1
   },
-  "last_heartbeat_ts": "2026-09-09T14:36:53.598924+00:00",
+  "last_heartbeat_ts": "2026-09-09T17:59:53.340225+00:00",
   "last_htf_trend": 1,
   "locked_until": null
 }
