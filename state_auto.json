@@ -3,9 +3,9 @@
   "consecutive_losses": 0,
   "locked_until": null,
   "last_signal": null,
-  "last_heartbeat_ts": "2026-09-13T05:10:57.538904+00:00",
+  "last_heartbeat_ts": "2026-09-13T10:19:43.851730+00:00",
   "last_htf_state": [
-    1,
+    -1,
     1
   ]
 }
