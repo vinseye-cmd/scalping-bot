@@ -1,11 +1,19 @@
 {
-  "position": null,
-  "consecutive_losses": 1,
+  "position": {
+    "id": "6aa9995808d994dc43c6459d",
+    "side": "short",
+    "entry": 75921.12045,
+    "sl": 77207.0,
+    "tp": 74955.5,
+    "halfway": 75438.31,
+    "be_active": false
+  },
+  "consecutive_losses": 0,
   "locked_until": null,
-  "last_signal": "LONG",
-  "last_heartbeat_ts": "2026-09-15T15:41:58.362715+00:00",
+  "last_signal": "SHORT",
+  "last_heartbeat_ts": "2026-09-15T19:15:33.172750+00:00",
   "last_htf_state": [
     -1,
-    1
+    -1
   ]
 }
