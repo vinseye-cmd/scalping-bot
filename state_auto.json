@@ -3,15 +3,15 @@
     "id": "6aa9995808d994dc43c6459d",
     "side": "short",
     "entry": 75921.12045,
-    "sl": 77207.0,
+    "sl": 75921.12045,
     "tp": 74955.5,
     "halfway": 75438.31,
-    "be_active": false
+    "be_active": true
   },
   "consecutive_losses": 0,
   "locked_until": null,
   "last_signal": "SHORT",
-  "last_heartbeat_ts": "2026-09-15T19:15:33.172750+00:00",
+  "last_heartbeat_ts": "2026-09-15T22:20:05.654779+00:00",
   "last_htf_state": [
     -1,
     -1
