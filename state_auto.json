@@ -1,17 +1,9 @@
 {
-  "position": {
-    "id": "6ad893dbfe4a1afa39bef522",
-    "side": "long",
-    "entry": 83301.73005000001,
-    "sl": 82755.7,
-    "tp": 83712.1,
-    "halfway": 83506.92,
-    "be_active": false
-  },
+  "position": null,
   "consecutive_losses": 0,
   "locked_until": null,
   "last_signal": "LONG",
-  "last_heartbeat_ts": "2026-10-21T10:28:41.029950+00:00",
+  "last_heartbeat_ts": "2026-10-21T15:32:44.458266+00:00",
   "last_htf_state": [
     1,
     1
